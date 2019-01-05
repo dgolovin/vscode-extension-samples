@@ -21,80 +21,105 @@ export async function multiStepInput(context: ExtensionContext) {
 		light: Uri.file(context.asAbsolutePath('resources/light/add.svg')),
 	}, 'Create Resource Group');
 
-	const resourceGroups: QuickPickItem[] = ['vscode-data-function', 'vscode-appservice-microservices', 'vscode-appservice-monitor', 'vscode-appservice-preview', 'vscode-appservice-prod']
+	const projects: QuickPickItem[] = ['project1', 'project2', 'project3', 'project4', 'project5']
 		.map(label => ({ label }));
 
+	const applications: QuickPickItem[] = ['app1', 'app2', 'app3', 'app4', 'app5']
+		.map(label => ({ label }));
 
 	interface State {
 		title: string;
 		step: number;
 		totalSteps: number;
-		resourceGroup: QuickPickItem | string;
+		project: QuickPickItem | string;
+		application: QuickPickItem | string;
 		name: string;
 		runtime: QuickPickItem;
 	}
 
 	async function collectInputs() {
 		const state = {} as Partial<State>;
-		await MultiStepInput.run(input => pickResourceGroup(input, state));
+
+		await MultiStepInput.run(input => pickProject(input, state));
 		return state as State;
 	}
 
-	const title = 'Create Application Service';
+	const title = 'Create OpenShift Component';
 
-	async function pickResourceGroup(input: MultiStepInput, state: Partial<State>) {
+	async function pickProject(input: MultiStepInput, state: Partial<State>, additionalSteps: number = 0) {
+		state.step = state.step ? state.step + 1 : 1;
 		const pick = await input.showQuickPick({
 			title,
-			step: 1,
-			totalSteps: 3,
-			placeholder: 'Pick a resource group',
-			items: resourceGroups,
-			activeItem: typeof state.resourceGroup !== 'string' ? state.resourceGroup : undefined,
+			step: state.step,
+			totalSteps: 3 + additionalSteps,
+			placeholder: 'Pick a Project',
+			items: projects,
+			activeItem: typeof state.project !== 'string' ? state.project : undefined,
 			buttons: [createResourceGroupButton],
 			shouldResume: shouldResume
 		});
 		if (pick instanceof MyButton) {
-			return (input: MultiStepInput) => inputResourceGroupName(input, state);
+			return (input: MultiStepInput) => inputProjectName(input, state, additionalSteps + 1);
 		}
-		state.resourceGroup = pick;
-		return (input: MultiStepInput) => inputName(input, state);
+		state.project = pick;
+		return (input: MultiStepInput) => pickApplicationName(input, state,  additionalSteps);
 	}
 
-	async function inputResourceGroupName(input: MultiStepInput, state: Partial<State>) {
-		state.resourceGroup = await input.showInputBox({
+	async function inputProjectName(input: MultiStepInput, state: Partial<State>, additionalSteps: number = 0) {
+		state.step = state.step ? state.step + 1 : 1;
+		state.project = await input.showInputBox({
 			title,
-			step: 2,
-			totalSteps: 4,
-			value: typeof state.resourceGroup === 'string' ? state.resourceGroup : '',
-			prompt: 'Choose a unique name for the resource group',
-			validate: validateNameIsUnique,
-			shouldResume: shouldResume
-		});
-		return (input: MultiStepInput) => inputName(input, state);
-	}
-
-	async function inputName(input: MultiStepInput, state: Partial<State>) {
-		const additionalSteps = typeof state.resourceGroup === 'string' ? 1 : 0;
-		// TODO: Remember current value when navigating back.
-		state.name = await input.showInputBox({
-			title,
-			step: 2 + additionalSteps,
+			step: state.step,
 			totalSteps: 3 + additionalSteps,
-			value: state.name || '',
-			prompt: 'Choose a unique name for the Application Service',
+			value: typeof state.project === 'string' ? state.project : '',
+			prompt: 'Choose a unique name for the Project',
 			validate: validateNameIsUnique,
 			shouldResume: shouldResume
 		});
-		return (input: MultiStepInput) => pickRuntime(input, state);
+		return (input: MultiStepInput) => pickApplicationName(input, state,  additionalSteps);
 	}
 
-	async function pickRuntime(input: MultiStepInput, state: Partial<State>) {
-		const additionalSteps = typeof state.resourceGroup === 'string' ? 1 : 0;
-		const runtimes = await getAvailableRuntimes(state.resourceGroup!, undefined /* TODO: token */);
+	async function pickApplicationName(input: MultiStepInput, state: Partial<State>, additionalSteps: number = 0) {
+		state.step = state.step ? state.step + 1 : 1;
+		const pick = await input.showQuickPick({
+			title,
+			step: state.step,
+			totalSteps: 3 + additionalSteps,
+			placeholder: 'Pick an Application',
+			items: applications,
+			activeItem: typeof state.application !== 'string' ? state.application : undefined,
+			buttons: [createResourceGroupButton],
+			shouldResume: shouldResume
+		});
+		if (pick instanceof MyButton) {
+			return (input: MultiStepInput) => inputApplicationName(input, state,  additionalSteps + 1);
+		}
+		state.application = pick;
+		return (input: MultiStepInput) => pickRuntime(input, state,  additionalSteps);
+	}
+
+	async function inputApplicationName(input: MultiStepInput, state: Partial<State>, additionalSteps: number = 0) {
+		state.step = state.step ? state.step + 1 : 1;
+		// TODO: Remember current value when navigating back.
+		state.application = await input.showInputBox({
+			title,
+			step: state.step,
+			totalSteps: 3 + additionalSteps,
+			value: typeof state.application === 'string' ? state.application : '',
+			prompt: 'Choose a unique name for the Application',
+			validate: validateNameIsUnique,
+			shouldResume: shouldResume
+		});
+		return (input: MultiStepInput) => pickRuntime(input, state, additionalSteps);
+	}
+
+	async function pickRuntime(input: MultiStepInput, state: Partial<State>, additionalSteps: number = 0) {
+		state.step = state.step ? state.step + 1 : 1;
+		const runtimes = await getAvailableRuntimes(state.application!, undefined /* TODO: token */);
 		// TODO: Remember currently active item when navigating back.
 		state.runtime = await input.showQuickPick({
 			title,
-			step: 3 + additionalSteps,
+			step: state.step,
 			totalSteps: 3 + additionalSteps,
 			placeholder: 'Pick a runtime',
 			items: runtimes,
@@ -124,9 +149,13 @@ export async function multiStepInput(context: ExtensionContext) {
 	}
 
 	const state = await collectInputs();
-	window.showInformationMessage(`Creating Application Service '${state.name}'`);
+	window.showInformationMessage(`OpenShift component '${isQuickPickItem(state.project) ? state.project.label : state.project}/${isQuickPickItem(state.application) ? state.application.label : state.application }/${state.runtime.label}'`);
 }
 
+
+function isQuickPickItem(item: QuickPickItem | string): item is QuickPickItem {
+    return typeof item !== 'string';
+}
 
 // -------------------------------------------------------
 // Helper code that wraps the API for the multi-step case.
